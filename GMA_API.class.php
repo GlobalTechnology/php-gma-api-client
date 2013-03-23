@@ -7,6 +7,8 @@ class GMA_API {
 
 	private $gmaCookie;
 
+	private $language = null;
+
 	public function __construct($gmaUrl) {
 		$this->gmaUrl = $gmaUrl;
 	}
@@ -36,6 +38,10 @@ class GMA_API {
 	public function setGmaCookie($gmaCookie) {
 		$this->gmaCookie = $gmaCookie;
 		return $this;
+	}
+
+	public function setLanguage($language = null) {
+		$this->language = $language;
 	}
 
 	private function _establishSession() {
@@ -122,6 +128,10 @@ class GMA_API {
 			$this->_establishSession();
 		}
 
+		if(!is_null($this->language)) {
+			$endpoint .= '&languageId=' . $this->language;
+		}
+
 		// parse postdata into json
 		if(is_null($postdata)) {
 			$json = null;
@@ -169,6 +179,10 @@ class GMA_API {
 	}
 
 	// API wrapper functions
+	public function getLanguages() {
+		return $this->apiRequest('?q=gmaservices/gma_language');
+	}
+
 	public function getNodes() {
 		return $this->apiRequest('?q=gmaservices/gma_node');
 	}
