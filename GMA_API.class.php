@@ -5,12 +5,29 @@ class GMA_API {
 	private $casUser;
 	private $casPassword;
 
+	private $_curlOpts = null;
+
 	private $gmaCookie;
 
 	private $language = null;
 
 	public function __construct($gmaUrl) {
 		$this->gmaUrl = $gmaUrl;
+	}
+
+	private function _getCurlHandle() {
+		$ch = curl_init();
+
+		// set default options
+		curl_setopt_array($ch, array(
+			CURLOPT_RETURNTRANSFER => true,
+			CURLINFO_HEADER_OUT    => true,
+		));
+		if(is_array($this->_curlOpts)) {
+			curl_setopt_array($ch, $this->_curlOpts);
+		}
+
+		return $ch;
 	}
 
 	public function setCasUrl($casUrl) {
@@ -31,6 +48,10 @@ class GMA_API {
 		return $this;
 	}
 
+	public function setCurlOpts(array $opts = null) {
+		$this->_curlOpts = $opts;
+	}
+
 	public function getGmaCookie() {
 		return $this->gmaCookie;
 	}
@@ -49,30 +70,29 @@ class GMA_API {
 		$this->gmaCookie = null;
 
 		// login to CAS
-		$ch = curl_init();
-		curl_setopt($ch, CURLOPT_URL, $this->casUrl . "v1/tickets");
-		curl_setopt($ch, CURLOPT_POSTFIELDS, "username=" . $this->casUser . "&password=" . $this->casPassword);
-		curl_setopt($ch, CURLOPT_HEADER, true);
-		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
+		$ch = $this->_getCurlHandle();
+		curl_setopt_array($ch, array(
+			CURLOPT_URL        => $this->casUrl . "v1/tickets",
+			CURLOPT_POSTFIELDS => "username=" . $this->casUser . "&password=" . $this->casPassword,
+			CURLOPT_HEADER     => true,
+		));
 		$data = curl_exec($ch);
 		$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-		list($headers, $data) = explode("\n\n", $data, 2);
 		curl_close($ch);
 
 		// login successful
 		if($code == 201) {
 			// parse TGT
-			preg_match('/Location:(.*?)\n/', $headers, $matches);
+			preg_match('/Location:(.*?)\n/', $data, $matches);
 			$tgtUrl = trim(array_pop($matches));
 
 			// get ST
 			$service = $this->gmaUrl . '?q=en/GMA&destination=GMA';
-			$ch = curl_init();
-			curl_setopt($ch, CURLOPT_URL, $tgtUrl);
-			curl_setopt($ch, CURLOPT_POSTFIELDS, "service=" . urlencode($service));
-			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
+			$ch = $this->_getCurlHandle();
+			curl_setopt_array($ch, array(
+				CURLOPT_URL        => $tgtUrl,
+				CURLOPT_POSTFIELDS =>  "service=" . urlencode($service),
+			));
 			$data = curl_exec($ch);
 			$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 			curl_close($ch);
@@ -81,38 +101,34 @@ class GMA_API {
 				$ticket = $data;
 
 				// use ST w/ GMA (follow redirects & capture cookie)
-				$ch = curl_init();
-				curl_setopt($ch, CURLOPT_URL, $service . '&ticket=' . $ticket);
-				curl_setopt($ch, CURLOPT_HEADER, true);
-				curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
+				$ch = $this->_getCurlHandle();
+				curl_setopt_array($ch, array(
+					CURLOPT_URL    => $service . '&ticket=' . $ticket,
+					CURLOPT_HEADER => true,
+				));
 				$data = curl_exec($ch);
-				$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-				list($headers, $data) = explode("\n\n", $data, 2);
 				curl_close($ch);
 
 				// parse Set-Cookie header (TODO: this is brittle)
-				preg_match('/Set-Cookie2?:(.*?)\n/', $headers, $matches);
-				$tmpCookie = array_shift(explode(';', array_pop($matches)));
+				preg_match('/Set-Cookie2?:(.*?)\n/', $data, $matches);
+				$tmpCookie = trim(array_shift(explode(';', array_pop($matches))));
 
 				// GMA performs a redirect which sets a new cookie, this is the actual cookie we need
 				if(!empty($tmpCookie)) {
-					preg_match('/Location:(.*?)\n/', $headers, $matches);
+					preg_match('/Location:(.*?)\n/', $data, $matches);
 					$newUri = trim(array_pop($matches));
 
-					$ch = curl_init();
-					curl_setopt($ch, CURLOPT_URL, $newUri);
-					curl_setopt($ch, CURLOPT_COOKIE, $tmpCookie);
-					curl_setopt($ch, CURLOPT_HEADER, true);
-					curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
+					$ch = $this->_getCurlHandle();
+					curl_setopt_array($ch, array(
+						CURLOPT_URL    => $newUri,
+						CURLOPT_COOKIE => $tmpCookie,
+						CURLOPT_HEADER => true,
+					));
 					$data = curl_exec($ch);
-					$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-					list($headers, $data) = explode("\n\n", $data, 2);
 					curl_close($ch);
 
 					// extract the correct Set-Cookie header
-					preg_match_all('/Set-Cookie2?:(.*?)\n/', $headers, $matches);
+					preg_match_all('/Set-Cookie2?:(.*?)\n/', $data, $matches);
 					$this->gmaCookie = array_shift(explode(';', array_pop(array_pop($matches))));
 
 					return true;
@@ -143,17 +159,19 @@ class GMA_API {
 		}
 
 		//make request
-		$ch = curl_init();
-		curl_setopt($ch, CURLOPT_URL, $this->gmaUrl . $endpoint);
-		curl_setopt($ch, CURLOPT_COOKIE, $this->gmaCookie);
-		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-		curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-		if(!is_null($json)) {
-			curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
-			curl_setopt($ch, CURLOPT_POST, true);
-			curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
+		$ch = $this->_getCurlHandle();
+		curl_setopt_array($ch, array(
+			CURLOPT_CUSTOMREQUEST => $method,
+			CURLOPT_URL           => $this->gmaUrl . $endpoint,
+			CURLOPT_COOKIE        => $this->gmaCookie,
+		));
+		if($json !== null) {
+			curl_setopt_array($ch, array(
+				CURLOPT_HTTPHEADER => array('Content-Type: application/json'),
+				CURLOPT_POST       => true,
+				CURLOPT_POSTFIELDS => $json,
+			));
 		}
-
 		$data = curl_exec($ch);
 		$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		curl_close($ch);
