@@ -79,70 +79,73 @@ class GMA_API {
 		$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		curl_close($ch);
 
-		// login successful
-		if($code == 201) {
-			// parse TGT
-			preg_match('/Location:(.*?)\n/', $data, $matches);
-			$tgtUrl = trim(array_pop($matches));
+		// parse TGT
+		preg_match('/Location:(.*?)\n/', $data, $matches);
+		$tgtUrl = trim(array_pop($matches));
 
-			// get ST
-			$service = $this->gmaUrl . '?q=en/GMA&destination=GMA';
-			$ch = $this->_getCurlHandle();
-			curl_setopt_array($ch, array(
-				CURLOPT_URL        => $tgtUrl,
-				CURLOPT_POSTFIELDS =>  "service=" . urlencode($service),
-			));
-			$data = curl_exec($ch);
-			$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-			curl_close($ch);
-
-			$ticket = $data;
-
-			// short-circuit if no ticket was received
-			if($code != 200 || empty($ticket)) {
-				return false;
-			}
-
-			// use ST w/ GMA (follow redirects & capture cookie)
-			$ch = $this->_getCurlHandle();
-			curl_setopt_array($ch, array(
-				CURLOPT_URL    => $service . '&ticket=' . $ticket,
-				CURLOPT_HEADER => true,
-			));
-			$data = curl_exec($ch);
-			curl_close($ch);
-
-			// parse Set-Cookie header (TODO: this is brittle)
-			preg_match('/Set-Cookie2?:(.*?)\n/', $data, $matches);
-			$tmpCookie = trim(array_shift(explode(';', array_pop($matches))));
-
-			// short-circuit if there was an error fetching the initial cookie for GMA
-			if(empty($tmpCookie)) {
-				return false;
-			}
-
-			// GMA performs a redirect which sets a new cookie, this is the actual cookie we need
-			preg_match('/Location:(.*?)\n/', $data, $matches);
-			$newUri = trim(array_pop($matches));
-
-			$ch = $this->_getCurlHandle();
-			curl_setopt_array($ch, array(
-				CURLOPT_URL    => $newUri,
-				CURLOPT_COOKIE => $tmpCookie,
-				CURLOPT_HEADER => true,
-			));
-			$data = curl_exec($ch);
-			curl_close($ch);
-
-			// extract the correct Set-Cookie header
-			preg_match_all('/Set-Cookie2?:(.*?)\n/', $data, $matches);
-			$this->gmaCookie = array_shift(explode(';', array_pop(array_pop($matches))));
-
-			// return session established successfully
-			return true;
+		// short-circuit if login was unsuccessful
+		if($code != 201 || empty($tgtUrl)) {
+			return false;
 		}
 
-		return false;
+
+		// get ST
+		$service = $this->gmaUrl . '?q=en/GMA&destination=GMA';
+		$ch = $this->_getCurlHandle();
+		curl_setopt_array($ch, array(
+			CURLOPT_URL        => $tgtUrl,
+			CURLOPT_POSTFIELDS =>  "service=" . urlencode($service),
+		));
+		$data = curl_exec($ch);
+		$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+		curl_close($ch);
+
+		$ticket = $data;
+
+		// short-circuit if no ticket was received
+		if($code != 200 || empty($ticket)) {
+			return false;
+		}
+
+
+		// use ST w/ GMA (follow redirects & capture cookie)
+		$ch = $this->_getCurlHandle();
+		curl_setopt_array($ch, array(
+			CURLOPT_URL    => $service . '&ticket=' . $ticket,
+			CURLOPT_HEADER => true,
+		));
+		$data = curl_exec($ch);
+		curl_close($ch);
+
+		// parse Set-Cookie header (TODO: this is brittle)
+		preg_match('/Set-Cookie2?:(.*?)\n/', $data, $matches);
+		$tmpCookie = trim(array_shift(explode(';', array_pop($matches))));
+
+		// short-circuit if there was an error fetching the initial cookie for GMA
+		if(empty($tmpCookie)) {
+			return false;
+		}
+
+
+		// GMA performs a redirect which sets a new cookie, this is the actual cookie we need
+		preg_match('/Location:(.*?)\n/', $data, $matches);
+		$newUri = trim(array_pop($matches));
+
+		$ch = $this->_getCurlHandle();
+		curl_setopt_array($ch, array(
+			CURLOPT_URL    => $newUri,
+			CURLOPT_COOKIE => $tmpCookie,
+			CURLOPT_HEADER => true,
+		));
+		$data = curl_exec($ch);
+		curl_close($ch);
+
+		// extract the correct Set-Cookie header
+		preg_match_all('/Set-Cookie2?:(.*?)\n/', $data, $matches);
+		$this->gmaCookie = array_shift(explode(';', array_pop(array_pop($matches))));
+
+		// return session established successfully
+		return true;
 	}
 
 	public function apiRequest($endpoint, $method = 'GET', $postdata = null, $retryCount = 0) {
