@@ -68,6 +68,31 @@ class GMA_API {
 		// clear previous gma cookie
 		$this->gmaCookie = null;
 
+		// determine GMA service to pass to CAS
+		$ch = $this->_getCurlHandle();
+		curl_setopt_array($ch, array(
+			CURLOPT_URL    => $this->gmaUrl,
+			CURLOPT_HEADER => true,
+		));
+		$data = curl_exec($ch);
+		curl_close($ch);
+
+		// determine the initial service url
+		preg_match('/Location:(.*?)\n/', $data, $matches);
+		$url = parse_url(trim(array_pop($matches)));
+		preg_match('/(?:^|&)service=(.*?)(?:&|$)/', $url['query'], $matches);
+		$service = urldecode(array_pop($matches));
+
+		// parse Set-Cookie header (TODO: this is brittle)
+		preg_match('/Set-Cookie2?:(.*?)\n/', $data, $matches);
+		$tmpCookie = trim(array_shift(explode(';', array_pop($matches))));
+
+		// short-circuit if no service was found
+		if(empty($service)) {
+			return false;
+		}
+
+
 		// login to CAS
 		$ch = $this->_getCurlHandle();
 		curl_setopt_array($ch, array(
@@ -90,7 +115,6 @@ class GMA_API {
 
 
 		// get ST
-		$service = $this->gmaUrl . '?q=en/GMA&destination=GMA';
 		$ch = $this->_getCurlHandle();
 		curl_setopt_array($ch, array(
 			CURLOPT_URL        => $tgtUrl,
@@ -112,14 +136,11 @@ class GMA_API {
 		$ch = $this->_getCurlHandle();
 		curl_setopt_array($ch, array(
 			CURLOPT_URL    => $service . '&ticket=' . $ticket,
+			CURLOPT_COOKIE => $tmpCookie,
 			CURLOPT_HEADER => true,
 		));
 		$data = curl_exec($ch);
 		curl_close($ch);
-
-		// parse Set-Cookie header (TODO: this is brittle)
-		preg_match('/Set-Cookie2?:(.*?)\n/', $data, $matches);
-		$tmpCookie = trim(array_shift(explode(';', array_pop($matches))));
 
 		// short-circuit if there was an error fetching the initial cookie for GMA
 		if(empty($tmpCookie)) {
@@ -187,7 +208,7 @@ class GMA_API {
 
 		// valid response
 		if($code == 200) {
-			return json_decode($data);
+			return json_decode($data, true);
 		} elseif($code == 404) {
 			return null;
 		}
