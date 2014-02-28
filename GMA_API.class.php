@@ -255,12 +255,16 @@ class GMA_API {
 		return $this->apiRequest('?q=gmaservices/gma_staffReport/' . $id);
 	}
 
-	public function getStaffReports($all = false, $nodeId = null, $renId = null, DateTime $date = null, $submitted = null) {
+	public function getStaffReports($all = false, $nodeIds = null, $renId = null, DateTime $date = null, $submitted = null) {
 		$data = array(
 			'maxResult' => 0,
 		);
-		if(!is_null($nodeId)) {
-			$data['nodeId'] = $nodeId;
+		if(!is_null($nodeIds)) {
+			if(!is_array($nodeIds)) {
+				$nodeIds = array($nodeIds);
+			}
+
+			$data['nodeId'] = $nodeIds;
 		}
 		if(!is_null($date)) {
 			$data['dateWithin'] = $date->format('Ymd');
