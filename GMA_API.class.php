@@ -8,6 +8,7 @@ class GMA_API {
 	private $_curlOpts = null;
 
 	private $gmaCookie;
+	private $csrfToken = null;
 
 	private $language = null;
 
@@ -49,19 +50,30 @@ class GMA_API {
 
 	public function setCurlOpts(array $opts = null) {
 		$this->_curlOpts = $opts;
+		return $this;
 	}
 
 	public function getGmaCookie() {
 		return $this->gmaCookie;
 	}
 
-	public function setGmaCookie($gmaCookie) {
+	public function setGmaCookie($gmaCookie = null) {
 		$this->gmaCookie = $gmaCookie;
+		return $this;
+	}
+
+	public function getCsrfToken() {
+		return $this->csrfToken;
+	}
+
+	public function setCsrfToken($token = null) {
+		$this->csrfToken = $token;
 		return $this;
 	}
 
 	public function setLanguage($language = null) {
 		$this->language = $language;
+		return $this;
 	}
 
 	private function _establishSession() {
@@ -165,11 +177,34 @@ class GMA_API {
 		preg_match_all('/Set-Cookie2?:(.*?)\n/', $data, $matches);
 		$this->gmaCookie = array_shift(explode(';', array_pop(array_pop($matches))));
 
+		// fetch a CSRF token
+		$this->_fetchCsrfToken();
+
 		// return session established successfully
 		return true;
 	}
 
-	public function apiRequest($endpoint, $method = 'GET', $postdata = null, $retryCount = 0) {
+	private function _fetchCsrfToken() {
+		// only fetch a CSRF token when we have a GMA cookie
+		if(!empty($this->gmaCookie)) {
+			// generate request
+			$ch = $this->_getCurlHandle();
+			curl_setopt_array($ch, array(
+				CURLOPT_URL           => $this->gmaUrl . '?q=services/session/token',
+				CURLOPT_COOKIE        => $this->gmaCookie,
+			));
+			$data = curl_exec($ch);
+			$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+			curl_close($ch);
+
+			// only accept CSRF tokens from 200 OK responses
+			if($code == 200) {
+				$this->csrfToken = $data;
+			}
+		}
+	}
+
+	public function apiRequest($endpoint, $method = 'GET', $postdata = null, $retryCount = 3) {
 		if(empty($this->gmaCookie)) {
 			$this->_establishSession();
 		}
@@ -188,20 +223,28 @@ class GMA_API {
 			$json = json_encode($postdata);
 		}
 
-		//make request
+		// build request
 		$ch = $this->_getCurlHandle();
 		curl_setopt_array($ch, array(
 			CURLOPT_CUSTOMREQUEST => $method,
 			CURLOPT_URL           => $this->gmaUrl . $endpoint,
 			CURLOPT_COOKIE        => $this->gmaCookie,
 		));
+		$headers = array();
+		if(!is_null($this->csrfToken)) {
+			$headers[] = 'X-CSRF-Token: ' . $this->csrfToken;
+		}
 		if($json !== null) {
+			$headers[] = 'Content-Type: application/json';
 			curl_setopt_array($ch, array(
-				CURLOPT_HTTPHEADER => array('Content-Type: application/json'),
 				CURLOPT_POST       => true,
 				CURLOPT_POSTFIELDS => $json,
 			));
 		}
+		if(count($headers) > 0) {
+			curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+		}
+
 		$data = curl_exec($ch);
 		$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		curl_close($ch);
@@ -214,16 +257,17 @@ class GMA_API {
 		}
 
 		// retry the request because of an invalid response
-		// reset the gmaCookie
+		// reset the gmaCookie & CSRF token
 		$this->gmaCookie = null;
+		$this->csrfToken = null;
 
 		// infinite loop sanity check
-		if($retryCount > 2) {
-			die("API error!!!!");
+		if($retryCount <= 0) {
+			die("API error!!!!\n");
 		}
 
 		// reissue API request
-		return $this->apiRequest($endpoint, $method, $postdata, $retryCount + 1);
+		return $this->apiRequest($endpoint, $method, $postdata, $retryCount - 1);
 	}
 
 	// API wrapper functions
