@@ -99,8 +99,8 @@ class GMA_API {
 		preg_match('/Set-Cookie2?:(.*?)\n/', $data, $matches);
 		$tmpCookie = trim(array_shift(explode(';', array_pop($matches))));
 
-		// short-circuit if no service was found
-		if(empty($service)) {
+		// short-circuit if no service or initial cookie was found
+		if(empty($service) || empty($tmpCookie)) {
 			return false;
 		}
 
@@ -153,11 +153,6 @@ class GMA_API {
 		));
 		$data = curl_exec($ch);
 		curl_close($ch);
-
-		// short-circuit if there was an error fetching the initial cookie for GMA
-		if(empty($tmpCookie)) {
-			return false;
-		}
 
 
 		// GMA performs a redirect which sets a new cookie, this is the actual cookie we need
