@@ -97,7 +97,8 @@ class GMA_API {
 
 		// parse Set-Cookie header (TODO: this is brittle)
 		preg_match('/Set-Cookie2?:(.*?)\n/', $data, $matches);
-		$tmpCookie = trim(array_shift(explode(';', array_pop($matches))));
+		$parts = explode(';', array_pop($matches));
+		$tmpCookie = trim($parts[0]);
 
 		// short-circuit if no service or initial cookie was found
 		if(empty($service) || empty($tmpCookie)) {
@@ -169,8 +170,9 @@ class GMA_API {
 		curl_close($ch);
 
 		// extract the correct Set-Cookie header
-		preg_match_all('/Set-Cookie2?:(.*?)\n/', $data, $matches);
-		$this->gmaCookie = array_shift(explode(';', array_pop(array_pop($matches))));
+		preg_match_all('/Set-Cookie2?:(.*?)\n/', $data, $matches, PREG_PATTERN_ORDER);
+		$parts = explode(';', array_pop($matches[1]));
+		$this->gmaCookie = $parts[0];
 
 		// fetch a CSRF token
 		$this->_fetchCsrfToken();
