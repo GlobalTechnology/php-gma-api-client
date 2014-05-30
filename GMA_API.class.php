@@ -109,7 +109,7 @@ class GMA_API {
 		$ch = $this->_getCurlHandle();
 		curl_setopt_array($ch, array(
 			CURLOPT_URL        => $this->casUrl . "v1/tickets",
-			CURLOPT_POSTFIELDS => "username=" . $this->casUser . "&password=" . $this->casPassword,
+			CURLOPT_POSTFIELDS => "username=" . urlencode($this->casUser) . "&password=" . urlencode($this->casPassword),
 			CURLOPT_HEADER     => true,
 		));
 		$data = curl_exec($ch);
